@@ -1,0 +1,18 @@
+[workspace]
+authors = ["Devah Schaefers <73009338+devahschaefers@users.noreply.github.com>"]
+channels = ["conda-forge"]
+name = "GaitDecoding"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+install-kernel = "pixi run python -m ipykernel install --user --name GaitDecoding --display-name 'Gait Decoding'"
+
+[dependencies]
+numpy = ">=2.4.2,<3"
+pandas = ">=3.0.1,<4"
+jupyterlab = ">=4.5.5,<5"
+matplotlib = ">=3.10.8,<4"
+seaborn = ">=0.13.2,<0.14"
+ipykernel = ">=7.2.0,<8"
+pip = ">=26.0.1,<27"
