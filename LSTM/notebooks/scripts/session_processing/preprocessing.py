@@ -1,18 +1,81 @@
 from __future__ import annotations
 
+"""
+Preprocessing extension guide
+=============================
+
+Use this module when you want to define a new preprocessing step and run it
+through the dataframe/session tools here.
+
+1. Implement the actual signal operation in `signal_transforms.py`.
+    Use one of these function shapes:
+
+    - Per-channel transform:
+         `fn(channel: np.ndarray, *, ...) -> np.ndarray`
+    - Per-channel-with-context transform:
+         `fn(channel: np.ndarray, signals: np.ndarray, *, ...) -> np.ndarray`
+    - Full-session transform:
+         `fn(signals: np.ndarray, *, ...) -> np.ndarray`
+
+2. Register the transform in this file so the dispatcher knows how to call it.
+    The registration helpers are:
+
+    - `register_per_channel_transform(...)`
+    - `register_per_channel_with_context_transform(...)`
+    - `register_session_transform(...)`
+
+3. If a per-channel transform also has a faster matrix-wide implementation,
+    register that implementation with:
+
+    - `register_session_implementation(channel_fn, session_fn)`
+
+    This lets callers keep using one logical transform while the dispatcher uses
+    the more efficient session-level version internally.
+
+4. If the transform changes the number of output channels, define output column
+    names with one of these approaches:
+
+    - pass `output_feature_cols=...` to `apply_transform(...)`
+    - or register a resolver with `register_output_feature_name_resolver(transform, resolver)`
+
+5. Build and run preprocessing pipelines with these functions:
+
+    - `apply_transform(...)`
+    - `apply_transforms(...)`
+    - `apply_transforms_over_subject_sessions(...)`
+    - `build_default_preprocessing_transforms(...)`
+    - `preprocess_session_df(...)`
+
+6. Use `functools.partial(...)` to bind parameters like `fs`, `bandpass`,
+    `clip_uv`, etc. The helper logic in this module unwraps partials before
+    dispatch, so registration still works.
+
+Typical workflow:
+
+- write the transform in `signal_transforms.py`
+- register it with one of:
+    `register_per_channel_transform`,
+    `register_per_channel_with_context_transform`,
+    `register_session_transform`
+- optionally register `register_session_implementation`
+- optionally register `register_output_feature_name_resolver`
+- then either add it to `build_default_preprocessing_transforms()` or pass it directly into `apply_transforms()`
+"""
+
 from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Sequence, cast
 
 import numpy as np
 import pandas as pd
 
-from session_processing import signal_transforms
-from session_processing.sessions import iter_subject_sessions, resolve_feature_cols
+from . import signal_transforms
+from .sessions import iter_subject_sessions, resolve_feature_cols
 
 
 TransformFn = Callable[..., np.ndarray]
 FeatureNameResolver = Callable[[Sequence[str], np.ndarray], List[str]]
 TransformKind = Literal["per_channel", "per_channel_with_context", "session"]
+FloatDType = np.dtype[np.floating[Any]] | type[np.floating[Any]]
 
 _TRANSFORM_KINDS: Dict[TransformFn, TransformKind] = {}
 _SESSION_IMPLEMENTATIONS: Dict[TransformFn, TransformFn] = {}
@@ -152,9 +215,15 @@ def _replace_feature_block(
     output_signals: np.ndarray,
     output_feature_cols: Sequence[str],
     *,
-    output_dtype: np.dtype[np.floating[Any]],
+    output_dtype: FloatDType,
 ) -> pd.DataFrame:
-    first_feature_idx = min(df_session.columns.get_loc(column_name) for column_name in old_feature_cols)
+    column_positions: List[int] = []
+    for column_name in old_feature_cols:
+        column_loc = df_session.columns.get_loc(column_name)
+        if not isinstance(column_loc, int):
+            raise ValueError(f"Feature column '{column_name}' must map to a single column.")
+        column_positions.append(column_loc)
+    first_feature_idx = min(column_positions)
     non_feature_df = df_session.drop(columns=list(old_feature_cols))
     feature_df = pd.DataFrame(
         output_signals.astype(output_dtype),
@@ -172,7 +241,7 @@ def _apply_transform_impl(
     *,
     feature_cols: Sequence[str],
     output_feature_cols: Optional[Sequence[str]],
-    output_dtype: np.dtype[np.floating[Any]],
+    output_dtype: FloatDType,
 ) -> tuple[pd.DataFrame, List[str]]:
     signals = df_session[list(feature_cols)].to_numpy(dtype=np.float64)
     output_signals = _dispatch_transform(transform, signals)
@@ -209,7 +278,7 @@ def apply_transform(
     time_col: str = "Time:512Hz",
     target_col: Optional[str] = None,
     output_feature_cols: Optional[Sequence[str]] = None,
-    output_dtype: np.dtype[np.floating[Any]] = np.float32,
+    output_dtype: FloatDType = np.float32,
 ) -> pd.DataFrame:
     """Apply one registered transform to a single session dataframe.
 
@@ -262,7 +331,7 @@ def apply_transforms(
     feature_cols: Optional[Iterable[str]] = None,
     time_col: str = "Time:512Hz",
     target_col: Optional[str] = None,
-    output_dtype: np.dtype[np.floating[Any]] = np.float32,
+    output_dtype: FloatDType = np.float32,
 ) -> pd.DataFrame:
     """Apply an ordered transform sequence to one session dataframe.
 
@@ -300,7 +369,7 @@ def apply_transforms_over_subject_sessions(
     session_col: str = "Session",
     time_col: str = "Time:512Hz",
     target_col: Optional[str] = None,
-    output_dtype: np.dtype[np.floating[Any]] = np.float32,
+    output_dtype: FloatDType = np.float32,
 ) -> pd.DataFrame:
     """Apply the same transform sequence to every session in a full dataframe."""
     if df.empty:

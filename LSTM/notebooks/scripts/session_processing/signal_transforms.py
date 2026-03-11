@@ -8,6 +8,14 @@ def _filter_padlen(a: np.ndarray, b: np.ndarray) -> int:
     return 3 * (max(len(a), len(b)) - 1)
 
 
+def _coerce_filter_coefficients(coefficients: object, *, filter_name: str) -> tuple[np.ndarray, np.ndarray]:
+    if not isinstance(coefficients, tuple) or len(coefficients) < 2:
+        raise TypeError(f"{filter_name} did not return valid filter coefficients.")
+    b_coeffs = np.asarray(coefficients[0], dtype=np.float64)
+    a_coeffs = np.asarray(coefficients[1], dtype=np.float64)
+    return b_coeffs, a_coeffs
+
+
 def _validate_bandpass(*, fs: float, bandpass: tuple[float, float]) -> float:
     nyq = fs / 2.0
     low, high = bandpass
@@ -97,7 +105,10 @@ def notch_filter_channel(
         Filtered channel with shape `(time_samples,)`.
     """
     _validate_notch(fs=fs, notch_hz=notch_hz)
-    b_n, a_n = iirnotch(notch_hz, notch_q, fs)
+    b_n, a_n = _coerce_filter_coefficients(
+        iirnotch(notch_hz, notch_q, fs),
+        filter_name="iirnotch",
+    )
     _validate_signal_length(len(channel), _filter_padlen(a_n, b_n), transform_name="notch filtering")
     return filtfilt(b_n, a_n, channel)
 
@@ -128,7 +139,10 @@ def notch_filter_session(
         Filtered session matrix with shape `(time_samples, num_channels)`.
     """
     _validate_notch(fs=fs, notch_hz=notch_hz)
-    b_n, a_n = iirnotch(notch_hz, notch_q, fs)
+    b_n, a_n = _coerce_filter_coefficients(
+        iirnotch(notch_hz, notch_q, fs),
+        filter_name="iirnotch",
+    )
     _validate_signal_length(
         signals.shape[0], _filter_padlen(a_n, b_n), transform_name="notch filtering"
     )
@@ -162,7 +176,10 @@ def bandpass_channel(
     """
     nyq = _validate_bandpass(fs=fs, bandpass=bandpass)
     low, high = bandpass
-    b_bp, a_bp = butter(order, [low / nyq, high / nyq], btype="band")
+    b_bp, a_bp = _coerce_filter_coefficients(
+        butter(order, [low / nyq, high / nyq], btype="band"),
+        filter_name="butter",
+    )
     _validate_signal_length(len(channel), _filter_padlen(a_bp, b_bp), transform_name="bandpass filtering")
     return filtfilt(b_bp, a_bp, channel)
 
@@ -194,7 +211,10 @@ def bandpass_session(
     """
     nyq = _validate_bandpass(fs=fs, bandpass=bandpass)
     low, high = bandpass
-    b_bp, a_bp = butter(order, [low / nyq, high / nyq], btype="band")
+    b_bp, a_bp = _coerce_filter_coefficients(
+        butter(order, [low / nyq, high / nyq], btype="band"),
+        filter_name="butter",
+    )
     _validate_signal_length(
         signals.shape[0], _filter_padlen(a_bp, b_bp), transform_name="bandpass filtering"
     )

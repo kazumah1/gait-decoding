@@ -5,8 +5,8 @@ from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union, c
 import numpy as np
 import pandas as pd
 
-from session_processing.preprocessing import preprocess_session_df
-from session_processing.sessions import SessionEffect, apply_session_effects, iter_subject_sessions, resolve_feature_cols
+from .preprocessing import preprocess_session_df
+from .sessions import SessionEffect, apply_session_effects, iter_subject_sessions, resolve_feature_cols
 
 
 WindowXY = Tuple[np.ndarray, Optional[np.ndarray]]
