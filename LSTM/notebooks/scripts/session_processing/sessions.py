@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from typing import Callable, Iterable, Iterator, List, Optional, Tuple, cast
+from typing import Iterable, Iterator, List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
-
-
-SessionEffect = Callable[[pd.DataFrame, object, object], pd.DataFrame]
-
 
 def resolve_feature_cols(
     df: pd.DataFrame,
@@ -79,74 +75,3 @@ def iter_subject_sessions(
         if session_df.empty:
             continue
         yield subject_id, session_id, session_df
-
-
-def apply_session_effects(
-    df_session: pd.DataFrame,
-    *,
-    effects: Iterable[SessionEffect],
-    subject_id: object,
-    session_id: object,
-) -> pd.DataFrame:
-    """Run a sequence of dataframe-level effects over one session dataframe.
-
-    Input
-    -----
-    df_session : pd.DataFrame
-        One session dataframe with shape `(session_rows, num_columns)`.
-    effects : iterable[SessionEffect]
-        Callables with signature
-        `(pd.DataFrame, subject_id, session_id) -> pd.DataFrame`.
-
-    Output
-    ------
-    pd.DataFrame
-        Transformed session dataframe. Row/column count may change depending on
-        the supplied effects.
-    """
-    session_out = df_session
-    for effect in effects:
-        session_out = effect(session_out, subject_id, session_id)
-    return session_out
-
-
-def apply_effects_over_subject_sessions(
-    df: pd.DataFrame,
-    *,
-    effects: Iterable[SessionEffect],
-    subject_col: str = "Subject",
-    session_col: str = "Session",
-) -> pd.DataFrame:
-    """Apply the same dataframe-level effects to every session and concatenate.
-
-    Input
-    -----
-    df : pd.DataFrame
-        Full dataframe containing one or more sessions.
-    effects : iterable[SessionEffect]
-        Dataframe-level session effects.
-
-    Output
-    ------
-    pd.DataFrame
-        Concatenation of all processed session dataframes.
-    """
-    if df.empty:
-        raise ValueError("df is empty.")
-
-    processed_sessions: List[pd.DataFrame] = []
-    for subject_id, session_id, session_df in iter_subject_sessions(
-        df, subject_col=subject_col, session_col=session_col
-    ):
-        processed_sessions.append(
-            apply_session_effects(
-                session_df,
-                effects=effects,
-                subject_id=subject_id,
-                session_id=session_id,
-            )
-        )
-
-    if not processed_sessions:
-        return df.iloc[0:0].copy()
-    return pd.concat(processed_sessions, axis=0, ignore_index=True)
