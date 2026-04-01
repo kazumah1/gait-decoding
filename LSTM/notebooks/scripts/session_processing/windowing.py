@@ -6,41 +6,11 @@ import numpy as np
 import pandas as pd
 
 from .preprocessing import preprocess_session_df
-from .sessions import SessionEffect, apply_session_effects, iter_subject_sessions, resolve_feature_cols
+from .sessions import iter_subject_sessions, resolve_feature_cols
 
 
 WindowXY = Tuple[np.ndarray, Optional[np.ndarray]]
 WindowXYMeta = Tuple[np.ndarray, Optional[np.ndarray], pd.DataFrame]
-
-
-def _build_default_preprocess_effect(
-    *,
-    feature_cols: Iterable[str],
-    time_col: str,
-    target_col: Optional[str],
-    fs: float,
-    preprocess_kwargs: Optional[Dict[str, Any]] = None,
-) -> SessionEffect:
-    kwargs = dict(preprocess_kwargs or {})
-    forbidden = {"feature_cols", "time_col", "target_col", "fs"}
-    overlap = sorted(forbidden.intersection(kwargs.keys()))
-    if overlap:
-        raise ValueError(
-            f"preprocess_kwargs cannot override {overlap}; pass them directly via function arguments."
-        )
-
-    def _effect(df_session: pd.DataFrame, _subject_id: object, _session_id: object) -> pd.DataFrame:
-        return preprocess_session_df(
-            df_session,
-            feature_cols=feature_cols,
-            time_col=time_col,
-            target_col=target_col,
-            fs=fs,
-            **kwargs,
-        )
-
-    return _effect
-
 
 @overload
 def session_df_to_windows(
@@ -179,7 +149,6 @@ def build_windows_over_subject_session(
     dropna: bool = True,
     apply_preprocessing: bool = True,
     preprocess_kwargs: Optional[Dict[str, Any]] = None,
-    session_effects: Optional[Iterable[SessionEffect]] = None,
     return_meta: Literal[False],
 ) -> WindowXY: ...
 
@@ -200,7 +169,6 @@ def build_windows_over_subject_session(
     dropna: bool = True,
     apply_preprocessing: bool = True,
     preprocess_kwargs: Optional[Dict[str, Any]] = None,
-    session_effects: Optional[Iterable[SessionEffect]] = None,
     return_meta: Literal[True] = True,
 ) -> WindowXYMeta: ...
 
@@ -220,7 +188,6 @@ def build_windows_over_subject_session(
     dropna: bool = True,
     apply_preprocessing: bool = True,
     preprocess_kwargs: Optional[Dict[str, Any]] = None,
-    session_effects: Optional[Iterable[SessionEffect]] = None,
     return_meta: bool = True,
 ) -> Union[WindowXY, WindowXYMeta]:
     """Build windows from a dataframe containing many sessions."""
@@ -228,19 +195,13 @@ def build_windows_over_subject_session(
         raise ValueError("df is empty.")
 
     resolved_feature_cols = resolve_feature_cols(df, feature_cols, time_col=time_col, target_col=target_col)
-    effects: List[SessionEffect] = []
-    if apply_preprocessing:
-        effects.append(
-            _build_default_preprocess_effect(
-                feature_cols=resolved_feature_cols,
-                time_col=time_col,
-                target_col=target_col,
-                fs=fs,
-                preprocess_kwargs=preprocess_kwargs,
-            )
+    preprocess_options = dict(preprocess_kwargs or {})
+    forbidden = {"feature_cols", "time_col", "target_col", "fs"}
+    overlap = sorted(forbidden.intersection(preprocess_options.keys()))
+    if overlap:
+        raise ValueError(
+            f"preprocess_kwargs cannot override {overlap}; pass them directly via function arguments."
         )
-    if session_effects is not None:
-        effects.extend(session_effects)
 
     window_feature_chunks: List[np.ndarray] = []
     window_target_chunks: List[np.ndarray] = []
@@ -249,12 +210,14 @@ def build_windows_over_subject_session(
     for subject_id, session_id, session_df in iter_subject_sessions(
         df, subject_col=subject_col, session_col=session_col
     ):
-        if effects:
-            session_df = apply_session_effects(
+        if apply_preprocessing:
+            session_df = preprocess_session_df(
                 session_df,
-                effects=effects,
-                subject_id=subject_id,
-                session_id=session_id,
+                feature_cols=resolved_feature_cols,
+                time_col=time_col,
+                target_col=target_col,
+                fs=fs,
+                **preprocess_options,
             )
 
         session_window_result = session_df_to_windows(

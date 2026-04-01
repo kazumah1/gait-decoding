@@ -1,0 +1,17 @@
+[project]
+name = "data-reencoding"
+version = "0.1.0"
+description = "Re-encode the gait decoding repository text files into one combined CSV."
+readme = "README.md"
+authors = [
+    { name = "Devah Schaefers", email = "73009338+devahschaefers@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = false
